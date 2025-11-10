@@ -85,15 +85,6 @@
       bpouLayer.changed(); // Force layer to re-render
     });
 
-    // Map click handler - click anywhere to find BPOU
-    map.on('click', async (evt) => {
-      const clickedCoord = evt.coordinate;
-      const [lon, lat] = ol.proj.toLonLat(clickedCoord);
-
-      // Process the clicked coordinates
-      await processCoordinates(lat, lon);
-    });
-
     // Internal CD source
     const cdSource = new ol.source.Vector();
 
