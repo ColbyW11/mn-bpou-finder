@@ -88,6 +88,8 @@
     // Internal CD source
     const cdSource = new ol.source.Vector();
 
+    // Map hover handler will be added after data is loaded
+
     // Auto-detect the script's location for relative paths
     const scriptSrc = document.currentScript?.src;
     const basePath = scriptSrc
@@ -178,39 +180,10 @@
         html += `<div style="margin-bottom:1rem;">`;
         html += `Your local BPOU is: <strong>${bpouName}</strong><br>`;
 
-        // Website
         if (bpouInfo.website) {
-          html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit website</a><br>`;
-        }
-
-        // Phone
-        if (bpouInfo.phone) {
-          html += `Phone: <a href="tel:${bpouInfo.phone}">${bpouInfo.phone}</a><br>`;
-        }
-
-        // Email
-        if (bpouInfo.email) {
-          html += `Email: <a href="mailto:${bpouInfo.email}">${bpouInfo.email}</a><br>`;
-        }
-
-        // Social Media
-        if (bpouInfo.facebook) {
-          html += `<a href="${bpouInfo.facebook}" target="_blank" rel="noopener">Facebook</a> `;
-        }
-        if (bpouInfo.twitter) {
-          html += `<a href="${bpouInfo.twitter}" target="_blank" rel="noopener">Twitter/X</a>`;
-        }
-        if (bpouInfo.facebook || bpouInfo.twitter) {
-          html += `<br>`;
-        }
-
-        // Meeting Info
-        if (bpouInfo.meetingInfo) {
-          html += `<em>${bpouInfo.meetingInfo}</em><br>`;
-        }
-
-        if (!bpouInfo.website && !bpouInfo.phone && !bpouInfo.email && !bpouInfo.facebook && !bpouInfo.twitter) {
-          html += `<em>Contact information not yet available</em><br>`;
+          html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+        } else {
+          html += `<em>Website not yet available</em><br>`;
         }
         html += `</div>`;
       } else {
@@ -222,28 +195,7 @@
       html += `Your Congressional District is: <strong>${cdID}</strong><br>`;
 
       if (cdInfo.website) {
-        html += `<a href="${cdInfo.website}" target="_blank" rel="noopener">Visit CD ${cdID} Republicans website</a><br>`;
-      }
-
-      // CD Phone
-      if (cdInfo.phone) {
-        html += `Phone: <a href="tel:${cdInfo.phone}">${cdInfo.phone}</a><br>`;
-      }
-
-      // CD Email
-      if (cdInfo.email) {
-        html += `Email: <a href="mailto:${cdInfo.email}">${cdInfo.email}</a><br>`;
-      }
-
-      // CD Social Media
-      if (cdInfo.facebook) {
-        html += `<a href="${cdInfo.facebook}" target="_blank" rel="noopener">Facebook</a> `;
-      }
-      if (cdInfo.twitter) {
-        html += `<a href="${cdInfo.twitter}" target="_blank" rel="noopener">Twitter/X</a>`;
-      }
-      if (cdInfo.facebook || cdInfo.twitter) {
-        html += `<br>`;
+        html += `<a href="${cdInfo.website}" target="_blank" rel="noopener">Visit CD ${cdID} Republicans website</a>`;
       }
       html += `</div>`;
 
@@ -256,6 +208,73 @@
       display.innerHTML = html;
     }
 
+    // Lightweight function for hover display (no zoom, no marker)
+    let lastHoveredBPOU = null;
+    function displayHoverInfo(point) {
+      // Find BPOU at this point
+      let bpouName = null;
+      bpouSource.getFeatures().forEach(f => {
+        if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
+          bpouName = f.get('BPOU_NAME');
+        }
+      });
+
+      // Only update if we're hovering over a different BPOU
+      if (bpouName === lastHoveredBPOU) return;
+      lastHoveredBPOU = bpouName;
+
+      // Determine CD
+      const cdFeature = cdSource.getFeatures().find(f => f.getGeometry()?.intersectsCoordinate(point));
+      const cdID = cdFeature?.get('CD') || '?';
+      const cdInfo = cdContacts[cdID] || {};
+
+      const display = document.getElementById('bpou-display');
+      let html = '';
+
+      // BPOU info
+      const bpouInfo = bpouContacts[bpouName] || {};
+      if (bpouName) {
+        html += `<div style="margin-bottom:1rem;">`;
+        html += `BPOU: <strong>${bpouName}</strong><br>`;
+
+        if (bpouInfo.website) {
+          html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+        } else {
+          html += `<em>Website not yet available</em><br>`;
+        }
+        html += `</div>`;
+      } else {
+        html += `<div style="margin-bottom:1rem;">Hover over a BPOU to see information</div>`;
+      }
+
+      // CD info
+      html += `<div>`;
+      html += `Congressional District: <strong>${cdID}</strong><br>`;
+
+      if (cdInfo.website) {
+        html += `<a href="${cdInfo.website}" target="_blank" rel="noopener">Visit CD ${cdID} Republicans website</a>`;
+      }
+      html += `</div>`;
+
+      // Add "Suggest Changes" link
+      const emailSubject = encodeURIComponent(`Find Your Local Republicans Page Suggestion`);
+      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
+      html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
+      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}" style="font-size:0.9rem;">Suggest changes or updates</a>`;
+      html += `</div>`;
+
+      display.innerHTML = html;
+    }
+
+    // Map hover handler - show info on mouse movement
+    map.on('pointermove', (evt) => {
+      if (evt.dragging) return; // Don't show info while dragging
+      displayHoverInfo(evt.coordinate);
+    });
+
+    // Add cursor pointer style to map
+    map.getViewport().style.cursor = 'pointer';
+
     // Rate limiting for Nominatim API
     let lastNominatimCall = 0;
     const NOMINATIM_DELAY = 1000; // 1 second between requests
@@ -265,7 +284,7 @@
       const addr = document.getElementById('bpou-address').value.trim();
 
       // Input validation
-      if (!addr) return alert('Please enter an address');
+      if (!addr) return alert('Please enter your address');
       if (addr.length < 3) return alert('Please enter a valid address (at least 3 characters)');
       if (addr.length > 200) return alert('Address is too long');
 
