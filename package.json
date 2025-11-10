@@ -1,0 +1,34 @@
+{
+  "name": "mn-bpou-finder",
+  "version": "1.0.0",
+  "description": "Minnesota Republican BPOU (Basic Political Organizational Unit) Finder Widget - helps users locate their local GOP organizations by address",
+  "main": "bpou-widget.js",
+  "scripts": {
+    "serve": "python -m http.server 8000",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/colbyw11/mn-bpou-finder.git"
+  },
+  "keywords": [
+    "minnesota",
+    "republican",
+    "bpou",
+    "politics",
+    "widget",
+    "map",
+    "congressional-district"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/colbyw11/mn-bpou-finder/issues"
+  },
+  "homepage": "https://github.com/colbyw11/mn-bpou-finder#readme",
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

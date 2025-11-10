@@ -48,30 +48,53 @@
     const bpouSource = new ol.source.Vector();
     const bpouLayer = new ol.layer.Vector({
       source: bpouSource,
-      style: new ol.style.Style({
-        stroke: new ol.style.Stroke({ color: '#b22234', width: 2 }),
-        fill: new ol.style.Fill({ color: 'rgba(178,34,52,0.25)' })
-      })
+      style: function(feature) {
+        // Style markers differently from polygons
+        if (feature.get('isMarker')) {
+          return new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 8,
+              fill: new ol.style.Fill({ color: '#b22234' }),
+              stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
+            })
+          });
+        }
+        // Default polygon style
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({ color: '#b22234', width: 2 }),
+          fill: new ol.style.Fill({ color: 'rgba(178,34,52,0.25)' })
+        });
+      }
     });
     map.addLayer(bpouLayer);
 
-    // Internal CD source 
+    // Internal CD source
     const cdSource = new ol.source.Vector();
 
-    const basePath = './';
+    // Auto-detect the script's location for relative paths
+    const scriptSrc = document.currentScript?.src;
+    const basePath = scriptSrc
+      ? scriptSrc.substring(0, scriptSrc.lastIndexOf('/') + 1)
+      : (window.BPOU_WIDGET_CONFIG?.basePath || './');
+
+    const displayEl = document.getElementById('bpou-display');
+    let loadErrors = [];
 
     // Load BPOU map
     try {
+      displayEl.innerHTML = 'Loading BPOU map data...';
       const bpouData = await fetch(basePath + 'BPOUMap.geojson').then(r => r.json());
       const bpouFeatures = new ol.format.GeoJSON().readFeatures(bpouData, { featureProjection: 'EPSG:3857' });
       bpouSource.addFeatures(bpouFeatures);
       console.log('Loaded BPOUs:', bpouFeatures.length);
     } catch (err) {
-      console.warn('Failed to load BPOUMap.geojson:', err);
+      console.error('Failed to load BPOUMap.geojson:', err);
+      loadErrors.push('Failed to load BPOU map data. The widget may not work correctly.');
     }
 
     // Load CD map
     try {
+      displayEl.innerHTML = 'Loading Congressional District map data...';
       const cdData = await fetch(basePath + 'CDMap.geojson').then(r => r.json());
       const cdFeatures = new ol.format.GeoJSON().readFeatures(cdData, { featureProjection: 'EPSG:3857' });
       cdFeatures.forEach(f => {
@@ -81,7 +104,15 @@
       cdSource.addFeatures(cdFeatures);
       console.log('Loaded CDMap');
     } catch (err) {
-      console.warn('Failed to load CDMap.geojson:', err);
+      console.error('Failed to load CDMap.geojson:', err);
+      loadErrors.push('Failed to load Congressional District map data. The widget may not work correctly.');
+    }
+
+    // Show load status
+    if (loadErrors.length > 0) {
+      displayEl.innerHTML = `<span style="color: #b22234;">ERROR: ${loadErrors.join(' ')}</span>`;
+    } else {
+      displayEl.innerHTML = 'Your BPOU will appear here after search';
     }
 
     // Load contact info
@@ -90,13 +121,48 @@
       fetch(basePath + 'cdContacts.json').then(r => r.json()).catch(() => ({}))
     ]);
 
+    // Rate limiting for Nominatim API
+    let lastNominatimCall = 0;
+    const NOMINATIM_DELAY = 1000; // 1 second between requests
+
     // Search button
     document.getElementById('bpou-search').addEventListener('click', async () => {
       const addr = document.getElementById('bpou-address').value.trim();
-      if (!addr) return alert('Enter an address');
+
+      // Input validation
+      if (!addr) return alert('Please enter an address');
+      if (addr.length < 3) return alert('Please enter a valid address (at least 3 characters)');
+      if (addr.length > 200) return alert('Address is too long');
+
+      const searchBtn = document.getElementById('bpou-search');
+      const display = document.getElementById('bpou-display');
+      const originalBtnText = searchBtn.textContent;
+
+      // Show loading state
+      searchBtn.disabled = true;
+      searchBtn.textContent = 'Searching...';
+      display.innerHTML = 'Searching for your location...';
 
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`);
+        // Rate limiting - wait if needed
+        const now = Date.now();
+        const timeSinceLastCall = now - lastNominatimCall;
+        if (timeSinceLastCall < NOMINATIM_DELAY) {
+          await new Promise(resolve => setTimeout(resolve, NOMINATIM_DELAY - timeSinceLastCall));
+        }
+        lastNominatimCall = Date.now();
+
+        // Fetch with proper User-Agent header per Nominatim usage policy
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`, {
+          headers: {
+            'User-Agent': 'BPOU-Finder-Widget/1.0 (Minnesota Republican BPOU Locator)'
+          }
+        });
+
+        if (res.status === 429) {
+          return alert('Too many requests. Please wait a moment and try again.');
+        }
+
         const data = await res.json();
         if (!data.length) return alert('Address not found. Try a more general location such as city, ZIP code, or street and city.');
 
@@ -158,7 +224,12 @@
 
       } catch (err) {
         console.error(err);
-        alert('Error searching address');
+        display.innerHTML = 'Error searching address. Please try again.';
+        alert('Error searching address. Please check your connection and try again.');
+      } finally {
+        // Restore button state
+        searchBtn.disabled = false;
+        searchBtn.textContent = originalBtnText;
       }
     });
   }
