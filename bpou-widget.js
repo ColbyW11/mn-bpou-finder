@@ -24,7 +24,14 @@
 
     container.innerHTML = `
       <input type="text" id="bpou-address" placeholder="Enter your address" style="width:100%;padding:0.5rem;margin-bottom:0.3rem;" />
-      <button id="bpou-search" style="padding:0.5rem;width:100%;">Search</button>
+      <div style="display:flex;gap:0.3rem;margin-bottom:0.3rem;">
+        <button id="bpou-search" style="padding:0.5rem;flex:1;">Search</button>
+        <button id="bpou-locate" style="padding:0.5rem;flex:1;background:#b22234;color:white;border:none;cursor:pointer;">Use My Location</button>
+      </div>
+      <label style="display:flex;align-items:center;margin-bottom:0.3rem;font-size:0.9rem;">
+        <input type="checkbox" id="bpou-show-boundaries" checked style="margin-right:0.3rem;" />
+        Show BPOU boundaries
+      </label>
       <div id="bpou-map" style="height:400px;margin-top:0.5rem;"></div>
       <div id="bpou-display" style="margin-top:0.5rem;font-weight:bold;">Your BPOU will appear here after search</div>
     `;
@@ -44,7 +51,8 @@
       })
     });
 
-    // BPOU layer
+    // BPOU layer with togglable boundaries
+    let showBoundaries = true;
     const bpouSource = new ol.source.Vector();
     const bpouLayer = new ol.layer.Vector({
       source: bpouSource,
@@ -59,7 +67,10 @@
             })
           });
         }
-        // Default polygon style
+        // Show/hide polygon boundaries based on toggle
+        if (!showBoundaries) {
+          return null; // Hide boundaries
+        }
         return new ol.style.Style({
           stroke: new ol.style.Stroke({ color: '#b22234', width: 2 }),
           fill: new ol.style.Fill({ color: 'rgba(178,34,52,0.25)' })
@@ -67,6 +78,12 @@
       }
     });
     map.addLayer(bpouLayer);
+
+    // Boundary toggle handler
+    document.getElementById('bpou-show-boundaries').addEventListener('change', (e) => {
+      showBoundaries = e.target.checked;
+      bpouLayer.changed(); // Force layer to re-render
+    });
 
     // Internal CD source
     const cdSource = new ol.source.Vector();
@@ -121,6 +138,124 @@
       fetch(basePath + 'cdContacts.json').then(r => r.json()).catch(() => ({}))
     ]);
 
+    // Shared function to process coordinates and display results
+    async function processCoordinates(lat, lon, bpouName = null) {
+      const point = ol.proj.fromLonLat([lon, lat]);
+
+      map.getView().setCenter(point);
+      map.getView().setZoom(13);
+
+      // Clear old markers
+      bpouSource.getFeatures().forEach(f => { if (f.get('isMarker')) bpouSource.removeFeature(f); });
+
+      // Add new marker
+      const marker = new ol.Feature({
+        geometry: new ol.geom.Point(point),
+        isMarker: true
+      });
+      bpouSource.addFeature(marker);
+
+      // Find BPOU if not provided
+      if (!bpouName) {
+        bpouSource.getFeatures().forEach(f => {
+          if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
+            bpouName = f.get('BPOU_NAME');
+          }
+        });
+      }
+
+      // Determine CD
+      const cdFeature = cdSource.getFeatures().find(f => f.getGeometry()?.intersectsCoordinate(point));
+      const cdID = cdFeature?.get('CD') || '?';
+      const cdInfo = cdContacts[cdID] || {};
+
+      const display = document.getElementById('bpou-display');
+      let html = '';
+
+      // BPOU info
+      const bpouInfo = bpouContacts[bpouName] || {};
+      if (bpouName) {
+        html += `<div style="margin-bottom:1rem;">`;
+        html += `Your local BPOU is: <strong>${bpouName}</strong><br>`;
+
+        // Website
+        if (bpouInfo.website) {
+          html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit website</a><br>`;
+        }
+
+        // Phone
+        if (bpouInfo.phone) {
+          html += `Phone: <a href="tel:${bpouInfo.phone}">${bpouInfo.phone}</a><br>`;
+        }
+
+        // Email
+        if (bpouInfo.email) {
+          html += `Email: <a href="mailto:${bpouInfo.email}">${bpouInfo.email}</a><br>`;
+        }
+
+        // Social Media
+        if (bpouInfo.facebook) {
+          html += `<a href="${bpouInfo.facebook}" target="_blank" rel="noopener">Facebook</a> `;
+        }
+        if (bpouInfo.twitter) {
+          html += `<a href="${bpouInfo.twitter}" target="_blank" rel="noopener">Twitter/X</a>`;
+        }
+        if (bpouInfo.facebook || bpouInfo.twitter) {
+          html += `<br>`;
+        }
+
+        // Meeting Info
+        if (bpouInfo.meetingInfo) {
+          html += `<em>${bpouInfo.meetingInfo}</em><br>`;
+        }
+
+        if (!bpouInfo.website && !bpouInfo.phone && !bpouInfo.email && !bpouInfo.facebook && !bpouInfo.twitter) {
+          html += `<em>Contact information not yet available</em><br>`;
+        }
+        html += `</div>`;
+      } else {
+        html += `<div style="margin-bottom:1rem;">Couldn't determine your BPOU.</div>`;
+      }
+
+      // CD info
+      html += `<div>`;
+      html += `Your Congressional District is: <strong>${cdID}</strong><br>`;
+
+      if (cdInfo.website) {
+        html += `<a href="${cdInfo.website}" target="_blank" rel="noopener">Visit CD ${cdID} Republicans website</a><br>`;
+      }
+
+      // CD Phone
+      if (cdInfo.phone) {
+        html += `Phone: <a href="tel:${cdInfo.phone}">${cdInfo.phone}</a><br>`;
+      }
+
+      // CD Email
+      if (cdInfo.email) {
+        html += `Email: <a href="mailto:${cdInfo.email}">${cdInfo.email}</a><br>`;
+      }
+
+      // CD Social Media
+      if (cdInfo.facebook) {
+        html += `<a href="${cdInfo.facebook}" target="_blank" rel="noopener">Facebook</a> `;
+      }
+      if (cdInfo.twitter) {
+        html += `<a href="${cdInfo.twitter}" target="_blank" rel="noopener">Twitter/X</a>`;
+      }
+      if (cdInfo.facebook || cdInfo.twitter) {
+        html += `<br>`;
+      }
+      html += `</div>`;
+
+      // Add "Suggest Changes" link
+      const emailSubject = encodeURIComponent(`Find Your Local Republicans Page Suggestion`);
+      html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
+      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}" style="font-size:0.9rem;">Suggest changes or updates</a>`;
+      html += `</div>`;
+
+      display.innerHTML = html;
+    }
+
     // Rate limiting for Nominatim API
     let lastNominatimCall = 0;
     const NOMINATIM_DELAY = 1000; // 1 second between requests
@@ -168,59 +303,9 @@
 
         const lat = parseFloat(data[0].lat);
         const lon = parseFloat(data[0].lon);
-        const point = ol.proj.fromLonLat([lon, lat]);
 
-        map.getView().setCenter(point);
-        map.getView().setZoom(13);
-
-        // Clear old markers
-        bpouSource.getFeatures().forEach(f => { if (f.get('isMarker')) bpouSource.removeFeature(f); });
-
-        // Add new marker
-        const marker = new ol.Feature({
-          geometry: new ol.geom.Point(point),
-          isMarker: true
-        });
-        bpouSource.addFeature(marker);
-
-        // find BPOU
-        let bpouName = null;
-        bpouSource.getFeatures().forEach(f => {
-          if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
-            bpouName = f.get('BPOU_NAME');
-          }
-        });
-
-        // Determine CD
-        const cdFeature = cdSource.getFeatures().find(f => f.getGeometry()?.intersectsCoordinate(point));
-        const cdID = cdFeature?.get('CD') || '?';
-        const cdURL = cdContacts[cdID]?.website || '#';
-
-        const display = document.getElementById('bpou-display');
-        let html = '';
-
-        // BPOU website
-        if (bpouName && bpouContacts[bpouName]?.website) {
-          html += `
-            Your local BPOU is: <strong>${bpouName}</strong><br>
-            <a href="${bpouContacts[bpouName].website}" target="_blank" rel="noopener">Visit BPOU website</a><br><br>
-          `;
-        } else if (bpouName) {
-          html += `
-            Your local BPOU is: <strong>${bpouName}</strong><br>
-            Couldn't find a local BPOU website.<br><br>
-          `;
-        } else {
-          html += `Couldn't determine your BPOU.<br><br>`;
-        }
-
-        // Always add CD info
-        html += `
-          Your Congressional District is: <strong>${cdID}</strong><br>
-          <a href="${cdURL}" target="_blank" rel="noopener">Visit Congressional District ${cdID} Republicans website</a>
-        `;
-
-        display.innerHTML = html;
+        // Process coordinates and display results
+        await processCoordinates(lat, lon);
 
       } catch (err) {
         console.error(err);
@@ -230,6 +315,62 @@
         // Restore button state
         searchBtn.disabled = false;
         searchBtn.textContent = originalBtnText;
+      }
+    });
+
+    // Use My Location button
+    document.getElementById('bpou-locate').addEventListener('click', async () => {
+      const locateBtn = document.getElementById('bpou-locate');
+      const display = document.getElementById('bpou-display');
+      const originalBtnText = locateBtn.textContent;
+
+      // Check if geolocation is supported
+      if (!navigator.geolocation) {
+        return alert('Geolocation is not supported by your browser.');
+      }
+
+      // Show loading state
+      locateBtn.disabled = true;
+      locateBtn.textContent = 'Getting location...';
+      display.innerHTML = 'Getting your current location...';
+
+      try {
+        // Get current position
+        const position = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          });
+        });
+
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        // Process coordinates and display results
+        await processCoordinates(lat, lon);
+
+      } catch (err) {
+        console.error('Geolocation error:', err);
+
+        // Provide specific error messages
+        let errorMsg = 'Unable to get your location. ';
+        if (err.code === 1) {
+          errorMsg += 'Location permission was denied. Please enable location access in your browser settings.';
+        } else if (err.code === 2) {
+          errorMsg += 'Location information is unavailable.';
+        } else if (err.code === 3) {
+          errorMsg += 'Location request timed out.';
+        } else {
+          errorMsg += 'Please try entering your address manually.';
+        }
+
+        display.innerHTML = errorMsg;
+        alert(errorMsg);
+      } finally {
+        // Restore button state
+        locateBtn.disabled = false;
+        locateBtn.textContent = originalBtnText;
       }
     });
   }
