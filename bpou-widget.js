@@ -201,6 +201,7 @@
 
       // Add "Suggest Changes" link
       const emailSubject = encodeURIComponent(`Find Your Local Republicans Page Suggestion`);
+      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
       html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}" style="font-size:0.9rem;">Suggest changes or updates</a>`;
       html += `</div>`;
@@ -258,7 +259,7 @@
 
       // Add "Suggest Changes" link
       const emailSubject = encodeURIComponent(`Local Republicans Page Suggestion`);
-      const emailBody = encodeURIComponent(`Hello,\nI would like to suggest the following updates for the Find Your Local Republicans Page:`);
+      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
       html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}" style="font-size:0.9rem;">Suggest changes or updates</a>`;
       html += `</div>`;
@@ -266,7 +267,7 @@
       display.innerHTML = html;
     }
 
-    // Map hover handler - show info on mouse movement
+    // Map hover handler - show info on mouse movement (set up after all data is loaded)
     map.on('pointermove', (evt) => {
       if (evt.dragging) return; // Don't show info while dragging
       displayHoverInfo(evt.coordinate);
@@ -298,6 +299,24 @@
       display.innerHTML = 'Searching for your location...';
 
       try {
+        // Helper function to clean and simplify addresses
+        function getAddressVariations(address) {
+          const variations = [address]; // Start with original
+
+          // Remove unit/apartment numbers
+          const withoutUnit = address
+            .replace(/\s*(UNIT|APT|APARTMENT|#|STE|SUITE)\s*\d+[A-Z]?/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (withoutUnit !== address) variations.push(withoutUnit);
+
+          // Extract just ZIP code if present
+          const zipMatch = address.match(/\b\d{5}(-\d{4})?\b/);
+          if (zipMatch) variations.push(zipMatch[0]);
+
+          return variations;
+        }
+
         // Rate limiting - wait if needed
         const now = Date.now();
         const timeSinceLastCall = now - lastNominatimCall;
@@ -306,25 +325,58 @@
         }
         lastNominatimCall = Date.now();
 
-        // Fetch with proper User-Agent header per Nominatim usage policy
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`, {
-          headers: {
-            'User-Agent': 'BPOU-Finder-Widget/1.0 (Minnesota Republican BPOU Locator)'
-          }
-        });
+        // Minnesota bounding box for more accurate results
+        const mnBounds = 'viewbox=-97.5,43.5,-89.5,49.5&bounded=1';
 
-        if (res.status === 429) {
-          return alert('Too many requests. Please wait a moment and try again.');
+        // Try multiple address variations
+        const variations = getAddressVariations(addr);
+        let data = null;
+        let successfulAddress = null;
+
+        for (const variation of variations) {
+          display.innerHTML = `Searching for: ${variation}...`;
+
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(variation)}&countrycodes=us&${mnBounds}`,
+            {
+              headers: {
+                'User-Agent': 'BPOU-Finder-Widget/1.0 (Minnesota Republican BPOU Locator)'
+              }
+            }
+          );
+
+          if (res.status === 429) {
+            return alert('Too many requests. Please wait a moment and try again.');
+          }
+
+          const result = await res.json();
+          if (result.length > 0) {
+            data = result;
+            successfulAddress = variation !== addr ? variation : null;
+            break;
+          }
+
+          // Wait between attempts
+          if (variation !== variations[variations.length - 1]) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
         }
 
-        const data = await res.json();
-        if (!data.length) return alert('Address not found. Try a more general location such as city, ZIP code, or street and city.');
+        if (!data || !data.length) {
+          return alert('Address not found. Try entering just your city and state, or ZIP code.');
+        }
 
         const lat = parseFloat(data[0].lat);
         const lon = parseFloat(data[0].lon);
 
         // Process coordinates and display results
         await processCoordinates(lat, lon);
+
+        // Show feedback if we used a simplified address
+        if (successfulAddress) {
+          const display = document.getElementById('bpou-display');
+          display.innerHTML = `<div style="margin-bottom:0.5rem;color:#666;font-size:0.9em;">Found using: ${successfulAddress}</div>` + display.innerHTML;
+        }
 
       } catch (err) {
         console.error(err);
