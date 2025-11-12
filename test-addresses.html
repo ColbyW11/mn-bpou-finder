@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MN Address Geocoding Test Suite</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #b22234;
+    }
+    .controls {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 5px;
+    }
+    button {
+      background: #b22234;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 16px;
+      border-radius: 3px;
+    }
+    button:hover {
+      background: #8b1a2a;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #status {
+      margin: 10px 0;
+      font-weight: bold;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background: #b22234;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background: #f9f9f9;
+    }
+    .success {
+      background: #d4edda !important;
+    }
+    .failure {
+      background: #f8d7da !important;
+    }
+    .status-icon {
+      font-size: 20px;
+    }
+    .test-details {
+      font-size: 0.9em;
+      color: #666;
+    }
+    .summary {
+      margin: 20px 0;
+      padding: 15px;
+      background: #e9ecef;
+      border-radius: 5px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Minnesota Address Geocoding Test Suite</h1>
+  <p>Tests the BPOU widget's address search functionality with various Minnesota addresses.</p>
+
+  <div class="controls">
+    <button id="runTests" onclick="runAllTests()">Run All Tests</button>
+    <button id="clearResults" onclick="clearResults()">Clear Results</button>
+    <div id="status"></div>
+  </div>
+
+  <div id="summary" class="summary" style="display:none;">
+    <strong>Results:</strong> <span id="summaryText"></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Street</th>
+        <th>City</th>
+        <th>ZIP</th>
+        <th>Result</th>
+        <th>Variations Tried</th>
+      </tr>
+    </thead>
+    <tbody id="results">
+    </tbody>
+  </table>
+
+  <script>
+    // Test addresses covering various Minnesota scenarios
+    const testAddresses = [
+      // Your failing address
+      { street: '40824 County Road 1', city: 'Rice', zip: '56367', description: 'Rural county road' },
+
+      // Urban addresses
+      { street: '7400 Metro Blvd', city: 'Edina', zip: '55439', description: 'Urban business address' },
+      { street: '100 N 6th St', city: 'Minneapolis', zip: '55403', description: 'Downtown Minneapolis' },
+      { street: '75 5th St W', city: 'St Paul', zip: '55102', description: 'Downtown St Paul' },
+
+      // Partial addresses (city + zip only)
+      { street: '', city: 'Rochester', zip: '55901', description: 'City + ZIP only' },
+      { street: '', city: 'Duluth', zip: '55802', description: 'City + ZIP only' },
+
+      // ZIP only
+      { street: '', city: '', zip: '55403', description: 'ZIP only (Minneapolis)' },
+      { street: '', city: '', zip: '56367', description: 'ZIP only (Rice)' },
+
+      // Small town addresses
+      { street: '123 Main St', city: 'Hutchinson', zip: '55350', description: 'Small town' },
+      { street: '456 Oak Ave', city: 'Mankato', zip: '56001', description: 'Regional center' },
+
+      // Highway addresses
+      { street: '12345 Highway 10', city: 'Anoka', zip: '55303', description: 'Highway address' },
+
+      // Addresses with apartments (should strip unit)
+      { street: '123 Main St APT 5', city: 'Minneapolis', zip: '55401', description: 'Apartment (should strip unit)' },
+
+      // No ZIP provided
+      { street: '100 Washington Ave S', city: 'Minneapolis', zip: '', description: 'No ZIP code' },
+
+      // Edge case: Very rural
+      { street: '23456 580th Ave', city: 'Goodridge', zip: '56725', description: 'Very rural address' },
+    ];
+
+    let currentTestIndex = 0;
+    let results = [];
+
+    async function runAllTests() {
+      const button = document.getElementById('runTests');
+      button.disabled = true;
+      button.textContent = 'Testing...';
+
+      document.getElementById('summary').style.display = 'none';
+      document.getElementById('results').innerHTML = '';
+
+      currentTestIndex = 0;
+      results = [];
+
+      for (let i = 0; i < testAddresses.length; i++) {
+        currentTestIndex = i;
+        updateStatus(`Testing ${i + 1} of ${testAddresses.length}: ${testAddresses[i].description}`);
+
+        const result = await testAddress(testAddresses[i]);
+        results.push(result);
+        addResultRow(result);
+
+        // Wait 1.5 seconds between tests to respect Nominatim rate limit
+        if (i < testAddresses.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      }
+
+      showSummary();
+      button.disabled = false;
+      button.textContent = 'Run All Tests';
+      updateStatus('Testing complete!');
+    }
+
+    async function testAddress(addr) {
+      const result = {
+        ...addr,
+        success: false,
+        foundWith: null,
+        variations: [],
+        error: null,
+        lat: null,
+        lon: null
+      };
+
+      try {
+        const variations = getAddressVariations(addr.street, addr.city, addr.zip);
+        result.variations = variations;
+
+        const mnBounds = 'viewbox=-97.5,43.5,-89.5,49.5&bounded=1';
+
+        for (const variation of variations) {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(variation)}&countrycodes=us&${mnBounds}`,
+            {
+              headers: {
+                'User-Agent': 'BPOU-Finder-Widget/1.0 (Minnesota Republican BPOU Locator - Testing)'
+              }
+            }
+          );
+
+          if (res.status === 429) {
+            result.error = 'Rate limited';
+            break;
+          }
+
+          const data = await res.json();
+          if (data.length > 0) {
+            result.success = true;
+            result.foundWith = variation;
+            result.lat = data[0].lat;
+            result.lon = data[0].lon;
+            break;
+          }
+
+          // Wait 500ms between variation attempts
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (err) {
+        result.error = err.message;
+      }
+
+      return result;
+    }
+
+    function getAddressVariations(street, city, zip) {
+      const variations = [];
+
+      // Remove unit/apartment numbers from street
+      const cleanStreet = street
+        ? street.replace(/\s*(UNIT|APT|APARTMENT|#|STE|SUITE)\s*\d+[A-Z]?/gi, '').trim()
+        : '';
+
+      // Build full address with all fields
+      const parts = [];
+      if (cleanStreet) parts.push(cleanStreet);
+      if (city) parts.push(city);
+      parts.push('MN'); // Always include MN
+      if (zip) parts.push(zip);
+
+      if (parts.length > 1) {
+        variations.push(parts.join(', '));
+      }
+
+      // Fallback: Street + MN + ZIP (skip city)
+      if (cleanStreet && zip) {
+        variations.push(`${cleanStreet}, MN ${zip}`);
+      }
+
+      // Fallback: City + MN + ZIP
+      if (city && zip) {
+        variations.push(`${city}, MN ${zip}`);
+      }
+
+      // Fallback: City + MN (no ZIP)
+      if (city) {
+        variations.push(`${city}, MN`);
+      }
+
+      // Fallback: Just ZIP code
+      if (zip) {
+        variations.push(zip);
+      }
+
+      // Remove duplicates
+      return [...new Set(variations)];
+    }
+
+    function addResultRow(result) {
+      const tbody = document.getElementById('results');
+      const row = tbody.insertRow();
+      row.className = result.success ? 'success' : 'failure';
+
+      row.innerHTML = `
+        <td class="status-icon">${result.success ? '✅' : '❌'}</td>
+        <td>${result.street || '<em>none</em>'}</td>
+        <td>${result.city || '<em>none</em>'}</td>
+        <td>${result.zip || '<em>none</em>'}</td>
+        <td>
+          ${result.success
+            ? `<strong>Found!</strong><br><span class="test-details">Lat: ${result.lat}, Lon: ${result.lon}</span>`
+            : `<strong>Failed</strong>${result.error ? '<br>' + result.error : ''}`}
+          ${result.foundWith && result.foundWith !== result.variations[0]
+            ? `<br><span class="test-details">Using: ${result.foundWith}</span>`
+            : ''}
+        </td>
+        <td class="test-details">${result.variations.join('<br>')}</td>
+      `;
+    }
+
+    function updateStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function showSummary() {
+      const total = results.length;
+      const passed = results.filter(r => r.success).length;
+      const failed = total - passed;
+      const percentage = ((passed / total) * 100).toFixed(1);
+
+      document.getElementById('summaryText').innerHTML =
+        `<span style="color: green;">${passed} passed</span>, ` +
+        `<span style="color: red;">${failed} failed</span> ` +
+        `out of ${total} tests (${percentage}% success rate)`;
+
+      document.getElementById('summary').style.display = 'block';
+    }
+
+    function clearResults() {
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('summary').style.display = 'none';
+      document.getElementById('status').textContent = '';
+      results = [];
+    }
+  </script>
+</body>
+</html>

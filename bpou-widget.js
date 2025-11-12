@@ -23,7 +23,9 @@
     if (!container) return console.error("No element with id='bpou-widget' found!");
 
     container.innerHTML = `
-      <input type="text" id="bpou-address" placeholder="Enter your address" style="width:100%;padding:0.5rem;margin-bottom:0.3rem;" />
+      <input type="text" id="bpou-street" placeholder="Street Address" style="width:100%;padding:0.5rem;margin-bottom:0.3rem;" />
+      <input type="text" id="bpou-city" placeholder="City" style="width:100%;padding:0.5rem;margin-bottom:0.3rem;" />
+      <input type="text" id="bpou-zip" placeholder="ZIP Code" style="width:100%;padding:0.5rem;margin-bottom:0.3rem;" />
       <div style="display:flex;gap:0.3rem;margin-bottom:0.3rem;">
         <button id="bpou-search" style="padding:0.5rem;flex:1;">Search</button>
         <button id="bpou-locate" style="padding:0.5rem;flex:1;background:#b22234;color:white;border:none;cursor:pointer;">Use My Location</button>
@@ -282,12 +284,14 @@
 
     // Search button
     document.getElementById('bpou-search').addEventListener('click', async () => {
-      const addr = document.getElementById('bpou-address').value.trim();
+      const street = document.getElementById('bpou-street').value.trim();
+      const city = document.getElementById('bpou-city').value.trim();
+      const zip = document.getElementById('bpou-zip').value.trim();
 
-      // Input validation
-      if (!addr) return alert('Please enter your address');
-      if (addr.length < 3) return alert('Please enter a valid address (at least 3 characters)');
-      if (addr.length > 200) return alert('Address is too long');
+      // Input validation - at least one field must have content
+      if (!street && !city && !zip) {
+        return alert('Please enter at least a street address, city, or ZIP code');
+      }
 
       const searchBtn = document.getElementById('bpou-search');
       const display = document.getElementById('bpou-display');
@@ -299,22 +303,48 @@
       display.innerHTML = 'Searching for your location...';
 
       try {
-        // Helper function to clean and simplify addresses
-        function getAddressVariations(address) {
-          const variations = [address]; // Start with original
+        // Helper function to create address variations from structured fields
+        function getAddressVariations(street, city, zip) {
+          const variations = [];
 
-          // Remove unit/apartment numbers
-          const withoutUnit = address
-            .replace(/\s*(UNIT|APT|APARTMENT|#|STE|SUITE)\s*\d+[A-Z]?/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-          if (withoutUnit !== address) variations.push(withoutUnit);
+          // Remove unit/apartment numbers from street
+          const cleanStreet = street
+            ? street.replace(/\s*(UNIT|APT|APARTMENT|#|STE|SUITE)\s*\d+[A-Z]?/gi, '').trim()
+            : '';
 
-          // Extract just ZIP code if present
-          const zipMatch = address.match(/\b\d{5}(-\d{4})?\b/);
-          if (zipMatch) variations.push(zipMatch[0]);
+          // Build full address with all fields
+          const parts = [];
+          if (cleanStreet) parts.push(cleanStreet);
+          if (city) parts.push(city);
+          parts.push('MN'); // Always include MN
+          if (zip) parts.push(zip);
 
-          return variations;
+          if (parts.length > 1) {
+            variations.push(parts.join(', '));
+          }
+
+          // Fallback: Street + MN + ZIP (skip city)
+          if (cleanStreet && zip) {
+            variations.push(`${cleanStreet}, MN ${zip}`);
+          }
+
+          // Fallback: City + MN + ZIP
+          if (city && zip) {
+            variations.push(`${city}, MN ${zip}`);
+          }
+
+          // Fallback: City + MN (no ZIP)
+          if (city) {
+            variations.push(`${city}, MN`);
+          }
+
+          // Fallback: Just ZIP code
+          if (zip) {
+            variations.push(zip);
+          }
+
+          // Remove duplicates
+          return [...new Set(variations)];
         }
 
         // Rate limiting - wait if needed
@@ -329,9 +359,10 @@
         const mnBounds = 'viewbox=-97.5,43.5,-89.5,49.5&bounded=1';
 
         // Try multiple address variations
-        const variations = getAddressVariations(addr);
+        const variations = getAddressVariations(street, city, zip);
         let data = null;
         let successfulAddress = null;
+        const firstVariation = variations[0]; // Track first attempt to compare
 
         for (const variation of variations) {
           display.innerHTML = `Searching for: ${variation}...`;
@@ -352,7 +383,7 @@
           const result = await res.json();
           if (result.length > 0) {
             data = result;
-            successfulAddress = variation !== addr ? variation : null;
+            successfulAddress = variation !== firstVariation ? variation : null;
             break;
           }
 
