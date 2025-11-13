@@ -48,7 +48,7 @@
         })
       ],
       view: new ol.View({
-        center: ol.proj.fromLonLat([-94.5, 46.7]),
+        center: ol.proj.fromLonLat([-94, 46.5]),
         zoom: 6
       })
     });
@@ -146,9 +146,6 @@
     async function processCoordinates(lat, lon, bpouName = null) {
       const point = ol.proj.fromLonLat([lon, lat]);
 
-      map.getView().setCenter(point);
-      map.getView().setZoom(13);
-
       // Clear old markers
       bpouSource.getFeatures().forEach(f => { if (f.get('isMarker')) bpouSource.removeFeature(f); });
 
@@ -205,7 +202,7 @@
       const emailSubject = encodeURIComponent(`Find Your Local Republicans Page Suggestion`);
       const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
-      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}" style="font-size:0.9rem;">Suggest changes or updates</a>`;
+      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
       html += `</div>`;
 
       display.innerHTML = html;
@@ -213,7 +210,11 @@
 
     // Lightweight function for hover display (no zoom, no marker)
     let lastHoveredBPOU = null;
+    let hasClickedBPOU = false; // Track if user has clicked on a BPOU
     function displayHoverInfo(point) {
+      // Don't update hover info if user has clicked on a BPOU
+      if (hasClickedBPOU) return;
+
       // Find BPOU at this point
       let bpouName = null;
       bpouSource.getFeatures().forEach(f => {
@@ -263,7 +264,7 @@
       const emailSubject = encodeURIComponent(`Local Republicans Page Suggestion`);
       const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
-      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}" style="font-size:0.9rem;">Suggest changes or updates</a>`;
+      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
       html += `</div>`;
 
       display.innerHTML = html;
@@ -273,6 +274,27 @@
     map.on('pointermove', (evt) => {
       if (evt.dragging) return; // Don't show info while dragging
       displayHoverInfo(evt.coordinate);
+    });
+
+    // Map click handler - make popup "stick" when clicked
+    map.on('click', async (evt) => {
+      const point = evt.coordinate;
+      const lonLat = ol.proj.toLonLat(point);
+      const [lon, lat] = lonLat;
+
+      // Find BPOU at clicked point
+      let bpouName = null;
+      bpouSource.getFeatures().forEach(f => {
+        if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
+          bpouName = f.get('BPOU_NAME');
+        }
+      });
+
+      // Only process if clicking on a BPOU
+      if (bpouName) {
+        hasClickedBPOU = true; // Set flag to prevent hover updates
+        await processCoordinates(lat, lon, bpouName);
+      }
     });
 
     // Add cursor pointer style to map
