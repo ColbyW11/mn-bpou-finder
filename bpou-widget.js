@@ -202,7 +202,7 @@
       const emailSubject = encodeURIComponent(`Find Your Local Republicans Page Suggestion`);
       const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
-      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
+      html += `<a href="mailto:datamanager@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
       html += `</div>`;
 
       display.innerHTML = html;
@@ -264,7 +264,7 @@
       const emailSubject = encodeURIComponent(`Local Republicans Page Suggestion`);
       const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
-      html += `<a href="mailto:info@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
+      html += `<a href="mailto:datamanager@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
       html += `</div>`;
 
       display.innerHTML = html;
