@@ -142,8 +142,31 @@
       fetch(basePath + 'cdContacts.json').then(r => r.json()).catch(() => ({}))
     ]);
 
+    // Helper function to find all BPOUs at a point and sort by priority
+    // Non-county BPOUs (HD/SD) come first, then county BPOUs
+    function findBPOUsAtPoint(point) {
+      const matchingBPOUs = [];
+      bpouSource.getFeatures().forEach(f => {
+        if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
+          matchingBPOUs.push(f.get('BPOU_NAME'));
+        }
+      });
+
+      // Sort: non-county (HD/SD) first, then county
+      matchingBPOUs.sort((a, b) => {
+        const aIsNonCounty = /^(HD|SD)\d+[AB]?\s+Republicans$/.test(a);
+        const bIsNonCounty = /^(HD|SD)\d+[AB]?\s+Republicans$/.test(b);
+
+        if (aIsNonCounty && !bIsNonCounty) return -1;
+        if (!aIsNonCounty && bIsNonCounty) return 1;
+        return a.localeCompare(b);
+      });
+
+      return matchingBPOUs;
+    }
+
     // Shared function to process coordinates and display results
-    async function processCoordinates(lat, lon, bpouName = null) {
+    async function processCoordinates(lat, lon, bpouNames = null) {
       const point = ol.proj.fromLonLat([lon, lat]);
 
       // Clear old markers
@@ -156,13 +179,12 @@
       });
       bpouSource.addFeature(marker);
 
-      // Find BPOU if not provided
-      if (!bpouName) {
-        bpouSource.getFeatures().forEach(f => {
-          if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
-            bpouName = f.get('BPOU_NAME');
-          }
-        });
+      // Find BPOUs if not provided (using helper function for priority sorting)
+      if (!bpouNames) {
+        bpouNames = findBPOUsAtPoint(point);
+      } else if (!Array.isArray(bpouNames)) {
+        // Convert single BPOU name to array for backward compatibility
+        bpouNames = [bpouNames];
       }
 
       // Determine CD
@@ -173,17 +195,28 @@
       const display = document.getElementById('bpou-display');
       let html = '';
 
-      // BPOU info
-      const bpouInfo = bpouContacts[bpouName] || {};
-      if (bpouName) {
+      // BPOU info (show all BPOUs in priority order)
+      if (bpouNames.length > 0) {
         html += `<div style="margin-bottom:1rem;">`;
-        html += `Your local BPOU is: <strong>${bpouName}</strong><br>`;
-
-        if (bpouInfo.website) {
-          html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+        if (bpouNames.length === 1) {
+          html += `Your local BPOU is: <strong>${bpouNames[0]}</strong><br>`;
         } else {
-          html += `<em>Website not yet available</em><br>`;
+          html += `Your local BPOUs are:<br>`;
         }
+
+        bpouNames.forEach((bpouName, index) => {
+          const bpouInfo = bpouContacts[bpouName] || {};
+          if (bpouNames.length > 1) {
+            html += `${index + 1}. <strong>${bpouName}</strong><br>`;
+          }
+
+          if (bpouInfo.website) {
+            html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+          } else {
+            html += `<em>Website not yet available</em><br>`;
+          }
+        });
+
         html += `</div>`;
       } else {
         html += `<div style="margin-bottom:1rem;">Couldn't determine your BPOU.</div>`;
@@ -200,7 +233,7 @@
 
       // Add "Suggest Changes" link
       const emailSubject = encodeURIComponent(`Find Your Local Republicans Page Suggestion`);
-      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
+      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouNames.join(', ') || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
       html += `<a href="mailto:datamanager@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
       html += `</div>`;
@@ -209,23 +242,19 @@
     }
 
     // Lightweight function for hover display (no zoom, no marker)
-    let lastHoveredBPOU = null;
+    let lastHoveredBPOUs = null;
     let hasClickedBPOU = false; // Track if user has clicked on a BPOU
     function displayHoverInfo(point) {
       // Don't update hover info if user has clicked on a BPOU
       if (hasClickedBPOU) return;
 
-      // Find BPOU at this point
-      let bpouName = null;
-      bpouSource.getFeatures().forEach(f => {
-        if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
-          bpouName = f.get('BPOU_NAME');
-        }
-      });
+      // Find all BPOUs at this point (sorted by priority)
+      const bpouNames = findBPOUsAtPoint(point);
 
-      // Only update if we're hovering over a different BPOU
-      if (bpouName === lastHoveredBPOU) return;
-      lastHoveredBPOU = bpouName;
+      // Only update if we're hovering over different BPOUs
+      const bpouKey = bpouNames.join('|');
+      if (bpouKey === lastHoveredBPOUs) return;
+      lastHoveredBPOUs = bpouKey;
 
       // Determine CD
       const cdFeature = cdSource.getFeatures().find(f => f.getGeometry()?.intersectsCoordinate(point));
@@ -235,17 +264,28 @@
       const display = document.getElementById('bpou-display');
       let html = '';
 
-      // BPOU info
-      const bpouInfo = bpouContacts[bpouName] || {};
-      if (bpouName) {
+      // BPOU info (show all BPOUs in priority order)
+      if (bpouNames.length > 0) {
         html += `<div style="margin-bottom:1rem;">`;
-        html += `BPOU: <strong>${bpouName}</strong><br>`;
-
-        if (bpouInfo.website) {
-          html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+        if (bpouNames.length === 1) {
+          html += `BPOU: <strong>${bpouNames[0]}</strong><br>`;
         } else {
-          html += `<em>Website not yet available</em><br>`;
+          html += `BPOUs:<br>`;
         }
+
+        bpouNames.forEach((bpouName, index) => {
+          const bpouInfo = bpouContacts[bpouName] || {};
+          if (bpouNames.length > 1) {
+            html += `${index + 1}. <strong>${bpouName}</strong><br>`;
+          }
+
+          if (bpouInfo.website) {
+            html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+          } else {
+            html += `<em>Website not yet available</em><br>`;
+          }
+        });
+
         html += `</div>`;
       } else {
         html += `<div style="margin-bottom:1rem;">Hover over a BPOU to see information</div>`;
@@ -262,7 +302,7 @@
 
       // Add "Suggest Changes" link
       const emailSubject = encodeURIComponent(`Local Republicans Page Suggestion`);
-      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouName || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
+      const emailBody = encodeURIComponent(`I would like to suggest the following updates:\n\nBPOU: ${bpouNames.join(', ') || 'N/A'}\nCongressional District: ${cdID}\n\nSuggested changes:\n`);
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #ccc;">`;
       html += `<a href="mailto:datamanager@mngop.com?subject=${emailSubject}&body=${emailBody}">Suggest changes or updates</a>`;
       html += `</div>`;
@@ -282,18 +322,13 @@
       const lonLat = ol.proj.toLonLat(point);
       const [lon, lat] = lonLat;
 
-      // Find BPOU at clicked point
-      let bpouName = null;
-      bpouSource.getFeatures().forEach(f => {
-        if (!f.get('isMarker') && f.getGeometry()?.intersectsCoordinate(point)) {
-          bpouName = f.get('BPOU_NAME');
-        }
-      });
+      // Find all BPOUs at clicked point (sorted by priority)
+      const bpouNames = findBPOUsAtPoint(point);
 
       // Only process if clicking on a BPOU
-      if (bpouName) {
+      if (bpouNames.length > 0) {
         hasClickedBPOU = true; // Set flag to prevent hover updates
-        await processCoordinates(lat, lon, bpouName);
+        await processCoordinates(lat, lon, bpouNames);
       }
     });
 
