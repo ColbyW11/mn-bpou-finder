@@ -34,7 +34,7 @@
         <input type="checkbox" id="bpou-show-boundaries" checked style="margin-right:0.3rem;" />
         Show BPOU boundaries
       </label>
-      <div id="bpou-map" style="height:600px;margin-top:0.5rem;"></div>
+      <div id="bpou-map" style="height:400px;margin-top:0.5rem;"></div>
       <div id="bpou-display" style="margin-top:0.5rem;font-weight:bold;">Your BPOU will appear here after search</div>
     `;
 
