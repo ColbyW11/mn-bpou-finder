@@ -210,10 +210,30 @@
             html += `${index + 1}. <strong>${bpouName}</strong><br>`;
           }
 
+          // Build links with website and social media
+          const links = [];
           if (bpouInfo.website) {
-            html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+            links.push(`<a href="${bpouInfo.website}" target="_blank" rel="noopener">Website</a>`);
           } else {
-            html += `<em>Website not yet available</em><br>`;
+            links.push(`<em>Website not yet available</em>`);
+          }
+          if (bpouInfo.facebook) {
+            links.push(`<a href="${bpouInfo.facebook}" target="_blank" rel="noopener">Facebook</a>`);
+          }
+          if (bpouInfo.X) {
+            links.push(`<a href="${bpouInfo.X}" target="_blank" rel="noopener">X</a>`);
+          }
+          if (bpouInfo.rumble) {
+            links.push(`<a href="${bpouInfo.rumble}" target="_blank" rel="noopener">Rumble</a>`);
+          }
+          if (bpouInfo.instagram) {
+            links.push(`<a href="${bpouInfo.instagram}" target="_blank" rel="noopener">Instagram</a>`);
+          }
+          html += links.join(' | ') + '<br>';
+
+          // Display point of contact if available
+          if (bpouInfo.contact) {
+            html += `<div style="margin-top:0.5rem;"><strong>Point of contact:</strong> ${bpouInfo.contact}</div>`;
           }
         });
 
@@ -279,10 +299,30 @@
             html += `${index + 1}. <strong>${bpouName}</strong><br>`;
           }
 
+          // Build links with website and social media
+          const links = [];
           if (bpouInfo.website) {
-            html += `<a href="${bpouInfo.website}" target="_blank" rel="noopener">Visit BPOU website</a><br>`;
+            links.push(`<a href="${bpouInfo.website}" target="_blank" rel="noopener">Website</a>`);
           } else {
-            html += `<em>Website not yet available</em><br>`;
+            links.push(`<em>Website not yet available</em>`);
+          }
+          if (bpouInfo.facebook) {
+            links.push(`<a href="${bpouInfo.facebook}" target="_blank" rel="noopener">Facebook</a>`);
+          }
+          if (bpouInfo.instagram) {
+            links.push(`<a href="${bpouInfo.instagram}" target="_blank" rel="noopener">Instagram</a>`);
+          }
+          if (bpouInfo.X) {
+            links.push(`<a href="${bpouInfo.X}" target="_blank" rel="noopener">X</a>`);
+          }
+          if (bpouInfo.rumble) {
+            links.push(`<a href="${bpouInfo.rumble}" target="_blank" rel="noopener">Rumble</a>`);
+          }
+          html += links.join(' | ') + '<br>';
+
+          // Display point of contact if available
+          if (bpouInfo.contact) {
+            html += `<div style="margin-top:0.5rem;"><strong>Point of contact:</strong> ${bpouInfo.contact}</div>`;
           }
         });
 
